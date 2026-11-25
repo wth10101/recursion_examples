@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recursive Grid Pathfinding Visualizer — count_paths</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Custom scrollbars for call stack and valid paths list */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.4);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.7);
+    }
+
+    @keyframes pulseRing {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+      }
+      50% {
+        transform: scale(1.03);
+        box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+      }
+    }
+
+    .active-cell-ring {
+      animation: pulseRing 1.6s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+  <!-- Top Navigation & Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 font-mono font-bold text-lg shadow-inner">
+          f(n)
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            Recursive Grid Pathfinding Visualizer
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+              count_paths
+            </span>
+          </h1>
+          <p class="text-xs text-slate-400">
+            Trace recursion depth, stack frames, and backtracking from <code class="text-slate-300">(0,0)</code> to <code class="text-slate-300">(rows-1, cols-1)</code>
+          </p>
+        </div>
+      </div>
+
+      <!-- Preset & Grid Size Selector -->
+      <div class="flex flex-wrap items-center gap-2">
+        <label for="preset-select" class="text-xs font-medium text-slate-400">Preset:</label>
+        <select id="preset-select" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+          <option value="classic3x3">3×3 Classic (Obstacle at 1,1)</option>
+          <option value="open3x3">3×3 Open Grid (6 paths)</option>
+          <option value="maze4x4">4×4 Maze (Multiple Obstacles)</option>
+          <option value="blocked3x3">3×3 Dead End (0 paths)</option>
+          <option value="custom">Custom Grid (Click cells)</option>
+        </select>
+
+        <div class="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-0.5 text-xs">
+          <button id="size-3x3" class="px-2.5 py-1 rounded-md font-medium transition bg-indigo-600 text-white">3×3</button>
+          <button id="size-4x4" class="px-2.5 py-1 rounded-md font-medium transition text-slate-400 hover:text-white">4×4</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 flex flex-col gap-4">
+
+    <!-- Playback Controls & Status Bar -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-lg flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+      
+      <!-- Step & Play Buttons -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btn-reset" title="Reset to Step 0" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Reset
+        </button>
+
+        <button id="btn-prev" title="Step Backward (Left Arrow)" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none active:scale-95 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+          Prev
+        </button>
+
+        <button id="btn-play" title="Play / Pause (Spacebar)" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold shadow-md shadow-indigo-950/50 transition flex items-center gap-1.5 min-w-[100px] justify-center">
+          <svg id="icon-play" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/></svg>
+          <svg id="icon-pause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 20 20"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z"/></svg>
+          <span id="label-play">Auto-Play</span>
+        </button>
+
+        <button id="btn-next" title="Step Forward (Right Arrow)" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none active:scale-95 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1">
+          Next
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <!-- Progress Scrubber & Step Counter -->
+      <div class="flex-1 flex flex-col gap-1.5 min-w-[200px]">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-slate-400 font-medium">Execution Step: <strong id="step-counter" class="text-white font-mono">0 / 0</strong></span>
+          <span id="step-badge" class="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">Ready</span>
+        </div>
+        <input id="step-scrubber" type="range" min="0" max="0" value="0" class="w-full accent-indigo-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer" />
+      </div>
+
+      <!-- Speed Slider -->
+      <div class="flex items-center gap-2.5 bg-slate-800/70 px-3 py-2 rounded-xl border border-slate-700/80">
+        <span class="text-xs text-slate-400 font-medium whitespace-nowrap">Speed:</span>
+        <input id="speed-slider" type="range" min="1" max="5" value="3" class="w-20 sm:w-24 accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer" />
+        <span id="speed-label" class="text-xs font-mono text-indigo-300 w-9 text-right">1.0x</span>
+      </div>
+    </section>
+
+    <!-- Live Narrator Banner -->
+    <div id="narrator-box" class="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2.5 flex items-center gap-3 text-xs sm:text-sm shadow-sm">
+      <span id="narrator-dot" class="w-2.5 h-2.5 rounded-full bg-indigo-400 shrink-0"></span>
+      <p id="narrator-text" class="text-slate-200 font-medium leading-relaxed">
+        Click any cell on the grid to toggle obstacles, or press <strong>Next</strong> / <strong>Auto-Play</strong> to trace the recursion.
+      </p>
+    </div>
+
+    <!-- 3-Column Educational Dashboard -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 items-start">
+
+      <!-- Column 1: Interactive 2D Grid & Valid Paths Found (5 cols on lg) -->
+      <div class="lg:col-span-5 flex flex-col gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-bold text-white">2D Search Grid</h2>
+              <p class="text-xs text-slate-400">Click cells to add/remove obstacles (<code class="text-rose-400">1</code>)</p>
+            </div>
+            <div class="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl">
+              <span class="text-xs text-emerald-300 font-medium">Valid Paths:</span>
+              <span id="valid-paths-count" class="text-base font-mono font-bold text-emerald-400">0</span>
+            </div>
+          </div>
+
+          <!-- Grid Container with Out-of-Bounds Ghost Margins -->
+          <div class="relative bg-slate-950/90 border border-slate-800/90 rounded-xl p-4 sm:p-5 flex items-center justify-center overflow-hidden">
+            <div id="grid-wrapper" class="w-full max-w-[340px]">
+              <!-- Rendered dynamically by JS -->
+            </div>
+          </div>
+
+          <!-- Color Legend -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-slate-300">
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded bg-blue-500/30 border-2 border-blue-400 inline-block"></span>
+              <span>Active Call</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded bg-indigo-500/20 border border-indigo-400/60 inline-block"></span>
+              <span>On Call Stack</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-400 inline-block"></span>
+              <span>Base Case (1)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded bg-rose-500/30 border border-rose-400 inline-block"></span>
+              <span>Blocked / OOB (0)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded bg-slate-800 border border-slate-600 inline-block"></span>
+              <span>Obstacle (1)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded bg-amber-500/20 border border-amber-400/60 inline-block"></span>
+              <span>Destination</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Discovered Valid Paths History -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Completed Valid Paths Found</h3>
+            <span class="text-[11px] text-slate-500">Hover a path to highlight</span>
+          </div>
+          <div id="discovered-paths-list" class="flex flex-wrap gap-1.5 min-h-[36px] items-center">
+            <span class="text-xs text-slate-500 italic">No paths completed yet...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 2: Synchronized Python Code Highlighter (4 cols on lg) -->
+      <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+            <span class="text-xs font-mono font-semibold text-slate-300 ml-1">count_paths.py</span>
+          </div>
+          <span class="text-[11px] text-slate-400 font-mono">Python 3</span>
+        </div>
+
+        <!-- Code Lines -->
+        <div id="code-container" class="font-mono text-xs leading-6 overflow-x-auto select-none">
+          <!-- Populated dynamically with line numbers and syntax spans -->
+        </div>
+
+        <!-- Local Variables Inspector for Top Stack Frame -->
+        <div class="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Current Frame Variables</span>
+            <span id="frame-depth-badge" class="text-[11px] font-mono text-indigo-400">Depth: 0</span>
+          </div>
+          <div id="local-vars-grid" class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div class="bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">row:</span>
+              <span id="var-row" class="text-white font-semibold">-</span>
+            </div>
+            <div class="bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">col:</span>
+              <span id="var-col" class="text-white font-semibold">-</span>
+            </div>
+            <div class="bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">down:</span>
+              <span id="var-down" class="text-sky-300 font-semibold">?</span>
+            </div>
+            <div class="bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800/80 flex justify-between">
+              <span class="text-slate-400">right:</span>
+              <span id="var-right" class="text-purple-300 font-semibold">?</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 3: Live Call Stack Visualization (3 cols on lg) -->
+      <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <div>
+            <h2 class="text-sm font-bold text-white">Live Call Stack</h2>
+            <p class="text-[11px] text-slate-400">LIFO Execution Frames</p>
+          </div>
+          <span id="stack-count-badge" class="px-2 py-0.5 rounded-full text-xs font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            0 frames
+          </span>
+        </div>
+
+        <!-- Stack Frames Container (Top of stack at the top) -->
+        <div id="call-stack-list" class="flex flex-col gap-2 max-h-[430px] overflow-y-auto pr-1 min-h-[260px]">
+          <div class="text-xs text-slate-500 text-center py-10 italic">
+            Call stack is empty.<br/>Step forward to push the initial call.
+          </div>
+        </div>
+
+        <!-- Stack Base Indicator -->
+        <div class="border-t-2 border-dashed border-slate-800 pt-2 text-center text-[11px] font-mono text-slate-500">
+          ▲ Top of Stack (Active) | Base ▼
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    /**
+     * Python code lines displayed in the synchronized code viewer.
+     * Line numbers (1-indexed) match the trace generator.
+     */
+    const PYTHON_CODE = [
+      { line: 1,  html: '<span class="text-purple-400">def</span> <span class="text-blue-400 font-semibold">count_paths</span>(grid, row=<span class="text-amber-300">0</span>, col=<span class="text-amber-300">0</span>):' },
+      { line: 2,  html: '    rows, cols = <span class="text-sky-300">len</span>(grid), <span class="text-sky-300">len</span>(grid[<span class="text-amber-300">0</span>])' },
+      { line: 3,  html: '' },
+      { line: 4,  html: '    <span class="text-slate-500 italic"># 1. Failure base cases: out of bounds or obstacle</span>' },
+      { line: 5,  html: '    <span class="text-purple-400">if</span> row >= rows <span class="text-purple-400">or</span> col >= cols <span class="text-purple-400">or</span> grid[row][col] == <span class="text-amber-300">1</span>:' },
+      { line: 6,  html: '        <span class="text-purple-400">return</span> <span class="text-rose-400 font-bold">0</span>' },
+      { line: 7,  html: '' },
+      { line: 8,  html: '    <span class="text-slate-500 italic"># 2. Success base case: reached destination</span>' },
+      { line: 9,  html: '    <span class="text-purple-400">if</span> row == rows - <span class="text-amber-300">1</span> <span class="text-purple-400">and</span> col == cols - <span class="text-amber-300">1</span>:' },
+      { line: 10, html: '        <span class="text-purple-400">return</span> <span class="text-emerald-400 font-bold">1</span>' },
+      { line: 11, html: '' },
+      { line: 12, html: '    <span class="text-slate-500 italic"># 3. Recursive calls: explore Down, then Right</span>' },
+      { line: 13, html: '    down = <span class="text-blue-400">count_paths</span>(grid, row + <span class="text-amber-300">1</span>, col)' },
+      { line: 14, html: '    right = <span class="text-blue-400">count_paths</span>(grid, row, col + <span class="text-amber-300">1</span>)' },
+      { line: 15, html: '    <span class="text-purple-400">return</span> down + right' },
+    ];
+
+    /**
+     * Preset grids for quick exploration.
+     */
+    const PRESETS = {
+      classic3x3: [
+        [0, 0, 0],
+        [0, 1, 0],
+        [0, 0, 0],
+      ],
+      open3x3: [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+      ],
+      maze4x4: [
+        [0, 0, 1, 0],
+        [0, 0, 0, 0],
+        [1, 0, 1, 0],
+        [0, 0, 0, 0],
+      ],
+      blocked3x3: [
+        [0, 1, 0],
+        [1, 0, 0],
+        [0, 0, 0],
+      ],
+    };
+
+    // Application State
+    let grid = PRESETS.classic3x3.map(row => [...row]);
+    let steps = [];
+    let currentStepIndex = 0;
+    let isPlaying = false;
+    let playTimer = null;
+    let hoveredValidPath = null;
+
+    // Speed mapping (slider value 1..5 -> interval in ms & label)
+    const SPEED_MAP = {
+      1: { ms: 1400, label: '0.5x' },
+      2: { ms: 950,  label: '0.75x' },
+      3: { ms: 600,  label: '1.0x' },
+      4: { ms: 320,  label: '1.75x' },
+      5: { ms: 130,  label: '3.0x' },
+    };
+
+    // DOM References
+    const gridWrapper = document.getElementById('grid-wrapper');
+    const codeContainer = document.getElementById('code-container');
+    const callStackList = document.getElementById('call-stack-list');
+    const stackCountBadge = document.getElementById('stack-count-badge');
+    const validPathsCountEl = document.getElementById('valid-paths-count');
+    const discoveredPathsList = document.getElementById('discovered-paths-list');
+    const narratorText = document.getElementById('narrator-text');
+    const narratorDot = document.getElementById('narrator-dot');
+    const stepCounter = document.getElementById('step-counter');
+    const stepBadge = document.getElementById('step-badge');
+    const stepScrubber = document.getElementById('step-scrubber');
+    const speedSlider = document.getElementById('speed-slider');
+    const speedLabel = document.getElementById('speed-label');
+    const presetSelect = document.getElementById('preset-select');
+    const btnPlay = document.getElementById('btn-play');
+    const iconPlay = document.getElementById('icon-play');
+    const iconPause = document.getElementById('icon-pause');
+    const labelPlay = document.getElementById('label-play');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const btnReset = document.getElementById('btn-reset');
+    const btnSize3 = document.getElementById('size-3x3');
+    const btnSize4 = document.getElementById('size-4x4');
+
+    // Frame variable elements
+    const frameDepthBadge = document.getElementById('frame-depth-badge');
+    const varRow = document.getElementById('var-row');
+    const varCol = document.getElementById('var-col');
+    const varDown = document.getElementById('var-down');
+    const varRight = document.getElementById('var-right');
+
+    /**
+     * Render static Python code structure once.
+     */
+    function initCodeViewer() {
+      codeContainer.innerHTML = PYTHON_CODE.map(item => `
+        <div id="code-line-${item.line}" class="flex items-center px-2 py-0.5 rounded transition-colors duration-150 border-l-2 border-transparent">
+          <span class="w-6 text-right pr-3 text-slate-600 select-none shrink-0">${item.line}</span>
+          <pre class="whitespace-pre font-mono">${item.html || ' '}</pre>
+        </div>
+      `).join('');
+    }
+
+    /**
+     * Deep-clones the current call stack so each recorded execution step has an immutable snapshot.
+     */
+    function cloneStack(stack) {
+      return stack.map(frame => ({ ...frame }));
+    }
+
+    /**
+     * Generates the complete step-by-step execution trace for `count_paths(grid)`.
+     */
+    function generateExecutionTrace(currentGrid) {
+      const rows = currentGrid.length;
+      const cols = currentGrid[0].length;
+      const trace = [];
+      const stack = [];
+      const completedPaths = []; // Array of arrays of {r, c} coordinates
+      let nextFrameId = 1;
+
+      function recordStep(activeLine, statusType, badgeText, description, oobCell = null, returningInfo = null) {
+        trace.push({
+          line: activeLine,
+          statusType, // 'neutral' | 'call' | 'fail' | 'success' | 'return'
+          badgeText,
+          description,
+          stack: cloneStack(stack),
+          oobCell,
+          returningInfo,
+          completedPaths: completedPaths.map(p => [...p]),
+        });
+      }
+
+      // Initial state before execution starts
+      recordStep(
+        1,
+        'neutral',
+        'Ready',
+        `Ready to run count_paths(grid, 0, 0) on a ${rows}×${cols} grid. Click Next or Auto-Play.`
+      );
+
+      function simulate(row, col, currentPathCoords) {
+        const frameId = nextFrameId++;
+        const isOutOfBounds = row >= rows || col >= cols;
+        const isObstacle = !isOutOfBounds && currentGrid[row][col] === 1;
+
+        const frame = {
+          id: frameId,
+          row,
+          col,
+          down: null,
+          right: null,
+          status: 'active', // 'active' | 'waiting-down' | 'waiting-right' | 'fail' | 'success' | 'done'
+          returnValue: null,
+          isOutOfBounds,
+          isObstacle,
+        };
+
+        stack.push(frame);
+
+        // Step A: Function entered & checking bounds/obstacle (Line 5)
+        const oobIndicator = isOutOfBounds ? { r: row, c: col } : null;
+        let checkReason = '';
+        if (isOutOfBounds) {
+          checkReason = `(${row}, ${col}) is out of bounds!`;
+        } else if (isObstacle) {
+          checkReason = `grid[${row}][${col}] == 1 (hit an obstacle)!`;
+        } else {
+          checkReason = `(${row}, ${col}) is inside the grid and open.`;
+        }
+
+        recordStep(
+          5,
+          isOutOfBounds || isObstacle ? 'fail' : 'call',
+          `Call (${row}, ${col})`,
+          `Entered count_paths(${row}, ${col}). Checking bounds & obstacles: ${checkReason}`,
+          oobIndicator
+        );
+
+        // Base Case 1: Out of bounds or Obstacle -> return 0 (Line 6)
+        if (isOutOfBounds || isObstacle) {
+          frame.status = 'fail';
+          frame.returnValue = 0;
+          recordStep(
+            6,
+            'fail',
+            'Base Case: 0',
+            `Failure base case triggered at (${row}, ${col}). Returning 0 to caller.`,
+            oobIndicator,
+            { row, col, value: 0 }
+          );
+          stack.pop();
+          return 0;
+        }
+
+        const nextPathCoords = [...currentPathCoords, { r: row, c: col }];
+
+        // Base Case 2: Destination check (Line 9)
+        const isDestination = row === rows - 1 && col === cols - 1;
+        recordStep(
+          9,
+          isDestination ? 'success' : 'call',
+          isDestination ? 'Goal Reached!' : 'Check Goal',
+          isDestination
+            ? `(${row}, ${col}) matches destination (${rows - 1}, ${cols - 1})!`
+            : `(${row}, ${col}) is not the destination (${rows - 1}, ${cols - 1}).`
+        );
+
+        if (isDestination) {
+          frame.status = 'success';
+          frame.returnValue = 1;
+          completedPaths.push(nextPathCoords);
+          recordStep(
+            10,
+            'success',
+            'Base Case: 1',
+            `Success base case! Found valid path #${completedPaths.length}. Returning 1.`,
+            null,
+            { row, col, value: 1 }
+          );
+          stack.pop();
+          return 1;
+        }
+
+        // Recursive Step 1: Move Down (Line 13)
+        frame.status = 'waiting-down';
+        recordStep(
+          13,
+          'call',
+          'Recurse Down',
+          `At (${row}, ${col}): Pausing frame to explore DOWN → count_paths(${row + 1}, ${col}).`
+        );
+
+        const downVal = simulate(row + 1, col, nextPathCoords);
+        frame.down = downVal;
+        frame.status = 'active';
+
+        recordStep(
+          13,
+          'return',
+          `down = ${downVal}`,
+          `Resumed (${row}, ${col}): Down branch returned ${downVal} path(s).`
+        );
+
+        // Recursive Step 2: Move Right (Line 14)
+        frame.status = 'waiting-right';
+        recordStep(
+          14,
+          'call',
+          'Recurse Right',
+          `At (${row}, ${col}): Pausing frame to explore RIGHT → count_paths(${row}, ${col + 1}).`
+        );
+
+        const rightVal = simulate(row, col + 1, nextPathCoords);
+        frame.right = rightVal;
+        frame.status = 'active';
+
+        recordStep(
+          14,
+          'return',
+          `right = ${rightVal}`,
+          `Resumed (${row}, ${col}): Right branch returned ${rightVal} path(s).`
+        );
+
+        // Combine & Return (Line 15)
+        const total = downVal + rightVal;
+        frame.status = 'done';
+        frame.returnValue = total;
+
+        recordStep(
+          15,
+          total > 0 ? 'success' : 'return',
+          `Return ${total}`,
+          `At (${row}, ${col}): Returning down (${downVal}) + right (${rightVal}) = ${total}.`,
+          null,
+          { row, col, value: total }
+        );
+
+        stack.pop();
+        return total;
+      }
+
+      const finalTotal = simulate(0, 0, []);
+
+      // Final completion state
+      recordStep(
+        15,
+        finalTotal > 0 ? 'success' : 'neutral',
+        'Finished',
+        `Execution complete! Total valid paths from (0, 0) to (${rows - 1}, ${cols - 1}): ${finalTotal}.`
+      );
+
+      return trace;
+    }
+
+    /**
+     * Rebuilds the trace from the current grid and resets to step 0.
+     */
+    function rebuildTraceAndReset() {
+      stopAutoPlay();
+      hoveredValidPath = null;
+      steps = generateExecutionTrace(grid);
+      currentStepIndex = 0;
+      stepScrubber.max = Math.max(0, steps.length - 1);
+      stepScrubber.value = 0;
+      renderCurrentStep();
+    }
+
+    /**
+     * Toggles an obstacle at (r, c) when the user clicks a grid cell.
+     */
+    function toggleCellObstacle(r, c) {
+      grid[r][c] = grid[r][c] === 1 ? 0 : 1;
+      presetSelect.value = 'custom';
+      rebuildTraceAndReset();
+    }
+
+    /**
+     * Renders the 2D Grid including out-of-bounds ghost cells when the algorithm checks past the bottom/right edges.
+     */
+    function renderGrid(step) {
+      const rows = grid.length;
+      const cols = grid[0].length;
+      const stack = step.stack;
+      const topFrame = stack.length > 0 ? stack[stack.length - 1] : null;
+      const oob = step.oobCell;
+
+      // Build lookup sets for cells in stack
+      const stackCoords = new Set(stack.filter(f => !f.isOutOfBounds).map(f => `${f.row},${f.col}`));
+      const hoveredSet = new Set((hoveredValidPath || []).map(p => `${p.r},${p.c}`));
+
+      // Determine if we need to show right or bottom out-of-bounds ghost slots
+      const showRightOOB = oob && oob.c >= cols;
+      const showBottomOOB = oob && oob.r >= rows;
+
+      // Render a clean CSS grid with 1 extra ghost column/row for OOB feedback
+      const totalDisplayCols = cols + 1;
+      const totalDisplayRows = rows + 1;
+
+      let html = `<div class="grid gap-2" style="grid-template-columns: repeat(${totalDisplayCols}, minmax(0, 1fr));">`;
+
+      for (let r = 0; r < totalDisplayRows; r++) {
+        for (let c = 0; c < totalDisplayCols; c++) {
+          const isGhostCol = c === cols;
+          const isGhostRow = r === rows;
+
+          // Ghost Out-of-Bounds Perimeter Cells
+          if (isGhostCol || isGhostRow) {
+            const isTargetOOB = oob && oob.r === r && oob.c === c;
+            if (isTargetOOB) {
+              html += `
+                <div class="aspect-square rounded-xl border-2 border-dashed border-rose-500 bg-rose-500/20 flex flex-col items-center justify-center text-rose-300 animate-pulse p-1">
+                  <span class="text-[10px] font-mono font-bold">(${r},${c})</span>
+                  <span class="text-[9px] font-semibold uppercase tracking-tight">OOB → 0</span>
+                </div>
+              `;
+            } else if ((isGhostCol && r < rows) || (isGhostRow && c < cols)) {
+              html += `
+                <div class="aspect-square rounded-xl border border-dashed border-slate-800/70 bg-slate-900/20 flex items-center justify-center text-[10px] font-mono text-slate-700 select-none">
+                  ${isGhostCol && r === 0 ? 'col≥' + cols : isGhostRow && c === 0 ? 'row≥' + rows : ''}
+                </div>
+              `;
+            } else {
+              html += `<div class="aspect-square"></div>`;
+            }
+            continue;
+          }
+
+          // Valid Grid Cell (r, c)
+          const isObstacle = grid[r][c] === 1;
+          const isStart = r === 0 && c === 0;
+          const isEnd = r === rows - 1 && c === cols - 1;
+          const isTopActive = topFrame && !topFrame.isOutOfBounds && topFrame.row === r && topFrame.col === c;
+          const isInStack = stackCoords.has(`${r},${c}`);
+          const isHoveredPath = hoveredSet.has(`${r},${c}`);
+
+          let cellClasses = 'aspect-square rounded-xl border-2 transition-all duration-150 flex flex-col items-center justify-between p-1.5 cursor-pointer relative select-none ';
+          let badgeHTML = '';
+          let centerHTML = '';
+
+          if (isObstacle) {
+            cellClasses += 'bg-slate-800/90 border-slate-600 text-slate-400 hover:border-slate-500 ';
+            centerHTML = `<span class="text-xs font-mono font-bold text-slate-400">WALL (1)</span>`;
+          } else {
+            cellClasses += 'bg-slate-900 border-slate-700/80 hover:border-indigo-400/70 text-slate-200 ';
+            centerHTML = `<span class="text-xs font-mono text-slate-500">0</span>`;
+          }
+
+          // Highlight hovered completed path
+          if (isHoveredPath && !isObstacle) {
+            cellClasses = cellClasses.replace('bg-slate-900', 'bg-emerald-500/25').replace('border-slate-700/80', 'border-emerald-400');
+          } else if (isTopActive) {
+            // Active top-of-stack cell styling
+            if (step.statusType === 'fail') {
+              cellClasses = 'aspect-square rounded-xl border-2 border-rose-500 bg-rose-500/25 text-rose-100 flex flex-col items-center justify-between p-1.5 cursor-pointer relative select-none active-cell-ring ';
+              centerHTML = `<span class="text-xs font-mono font-bold text-rose-300">RET 0</span>`;
+            } else if (step.statusType === 'success') {
+              cellClasses = 'aspect-square rounded-xl border-2 border-emerald-400 bg-emerald-500/25 text-emerald-100 flex flex-col items-center justify-between p-1.5 cursor-pointer relative select-none active-cell-ring ';
+              centerHTML = `<span class="text-xs font-mono font-bold text-emerald-300">RET ${topFrame.returnValue}</span>`;
+            } else {
+              cellClasses = 'aspect-square rounded-xl border-2 border-blue-400 bg-blue-500/25 text-white flex flex-col items-center justify-between p-1.5 cursor-pointer relative select-none active-cell-ring ';
+              centerHTML = `<span class="text-xs font-mono font-bold text-blue-200">ACTIVE</span>`;
+            }
+          } else if (isInStack) {
+            cellClasses = 'aspect-square rounded-xl border-2 border-indigo-400/70 bg-indigo-500/20 text-indigo-100 flex flex-col items-center justify-between p-1.5 cursor-pointer relative select-none ';
+            const frameForCell = stack.find(f => f.row === r && f.col === c);
+            const arrow = frameForCell?.status === 'waiting-down' ? '↓' : frameForCell?.status === 'waiting-right' ? '→' : '•';
+            centerHTML = `<span class="text-sm font-mono font-bold text-indigo-300">${arrow}</span>`;
+          }
+
+          // Corner Start / Goal badges
+          if (isStart) {
+            badgeHTML = `<span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-indigo-500/30 text-indigo-200 border border-indigo-400/40">Start</span>`;
+          } else if (isEnd) {
+            badgeHTML = `<span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-500/25 text-amber-300 border border-amber-400/40">Goal</span>`;
+          } else {
+            badgeHTML = `<span class="h-3.5"></span>`;
+          }
+
+          html += `
+            <div onclick="toggleCellObstacle(${r}, ${c})" title="Click to toggle obstacle at (${r}, ${c})" class="${cellClasses}">
+              <div class="w-full flex items-center justify-between text-[10px] font-mono opacity-80">
+                <span>(${r},${c})</span>
+              </div>
+              <div class="my-auto">${centerHTML}</div>
+              <div class="w-full flex justify-center">${badgeHTML}</div>
+            </div>
+          `;
+        }
+      }
+
+      html += `</div>`;
+      gridWrapper.innerHTML = html;
+    }
+
+    /**
+     * Highlights the currently executing Python line and updates local frame variables.
+     */
+    function renderCodeAndVars(step) {
+      // Highlight active line
+      PYTHON_CODE.forEach(item => {
+        const el = document.getElementById(`code-line-${item.line}`);
+        if (!el) return;
+        el.className = 'flex items-center px-2 py-0.5 rounded transition-colors duration-150 border-l-2 border-transparent';
+
+        if (item.line === step.line) {
+          if (step.statusType === 'fail') {
+            el.classList.add('bg-rose-500/20', 'border-rose-400');
+          } else if (step.statusType === 'success') {
+            el.classList.add('bg-emerald-500/20', 'border-emerald-400');
+          } else if (step.statusType === 'return') {
+            el.classList.add('bg-amber-500/15', 'border-amber-400');
+          } else {
+            el.classList.add('bg-indigo-500/25', 'border-indigo-400');
+          }
+        }
+      });
+
+      // Update local variables panel from top of call stack
+      const stack = step.stack;
+      frameDepthBadge.textContent = `Depth: ${stack.length}`;
+
+      if (stack.length === 0) {
+        varRow.textContent = '-';
+        varCol.textContent = '-';
+        varDown.textContent = '?';
+        varRight.textContent = '?';
+      } else {
+        const top = stack[stack.length - 1];
+        varRow.textContent = top.row;
+        varCol.textContent = top.col;
+        varDown.textContent = top.down !== null ? top.down : '?';
+        varRight.textContent = top.right !== null ? top.right : '?';
+      }
+    }
+
+    /**
+     * Renders the LIFO Call Stack frames panel (newest frame at top).
+     */
+    function renderCallStack(step) {
+      const stack = step.stack;
+      stackCountBadge.textContent = `${stack.length} ${stack.length === 1 ? 'frame' : 'frames'}`;
+
+      if (stack.length === 0) {
+        callStackList.innerHTML = `
+          <div class="text-xs text-slate-500 text-center py-10 italic">
+            ${currentStepIndex === 0
+              ? 'Call stack is empty.<br/>Step forward to push count_paths(0, 0).'
+              : 'All recursive calls have returned.<br/>Call stack is now empty.'}
+          </div>
+        `;
+        return;
+      }
+
+      // Display top of stack first
+      const reversed = [...stack].reverse();
+      callStackList.innerHTML = reversed.map((frame, idx) => {
+        const isTop = idx === 0;
+        let cardStyle = 'border-slate-700/80 bg-slate-800/60';
+        let statusBadge = '';
+
+        if (isTop) {
+          if (frame.status === 'fail') {
+            cardStyle = 'border-rose-500/70 bg-rose-950/40 shadow-md shadow-rose-950/30';
+            statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">return 0</span>`;
+          } else if (frame.status === 'success') {
+            cardStyle = 'border-emerald-500/70 bg-emerald-950/40 shadow-md shadow-emerald-950/30';
+            statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">return 1</span>`;
+          } else if (frame.status === 'done') {
+            cardStyle = 'border-amber-500/70 bg-amber-950/30 shadow-md';
+            statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">return ${frame.returnValue}</span>`;
+          } else {
+            cardStyle = 'border-blue-500/80 bg-blue-950/35 shadow-md shadow-blue-950/30';
+            statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/40">executing</span>`;
+          }
+        } else {
+          const waitLabel = frame.status === 'waiting-down' ? 'awaiting down' : 'awaiting right';
+          statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-700">${waitLabel}</span>`;
+        }
+
+        const downText = frame.down !== null ? `<span class="text-sky-300 font-semibold">${frame.down}</span>` : `<span class="text-slate-500">pending</span>`;
+        const rightText = frame.right !== null ? `<span class="text-purple-300 font-semibold">${frame.right}</span>` : `<span class="text-slate-500">pending</span>`;
+
+        return `
+          <div class="rounded-xl border ${cardStyle} p-2.5 transition-all duration-150 flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-mono text-xs font-bold ${isTop ? 'text-white' : 'text-slate-300'}">
+                count_paths(${frame.row}, ${frame.col})
+              </span>
+              ${statusBadge}
+            </div>
+            <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 bg-slate-950/60 px-2 py-1 rounded-lg">
+              <span>down: ${downText}</span>
+              <span class="text-slate-700">|</span>
+              <span>right: ${rightText}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * Renders discovered valid paths as interactive pills.
+     */
+    function renderDiscoveredPaths(step) {
+      const paths = step.completedPaths;
+      validPathsCountEl.textContent = paths.length;
+
+      if (paths.length === 0) {
+        discoveredPathsList.innerHTML = `<span class="text-xs text-slate-500 italic">No paths completed yet...</span>`;
+        return;
+      }
+
+      discoveredPathsList.innerHTML = paths.map((coordList, index) => {
+        // Convert coordinate list into directional moves like D → R → R → D
+        const moves = [];
+        for (let i = 1; i < coordList.length; i++) {
+          const dr = coordList[i].r - coordList[i - 1].r;
+          moves.push(dr === 1 ? 'D' : 'R');
+        }
+        const moveStr = moves.join('→') || 'Start=Goal';
+
+        return `
+          <button
+            onmouseenter="setHoveredPath(${index})"
+            onmouseleave="setHoveredPath(null)"
+            class="px-2.5 py-1 rounded-lg bg-emerald-950/70 hover:bg-emerald-800/60 border border-emerald-500/40 text-emerald-300 font-mono text-xs transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <span class="font-bold text-emerald-400">#${index + 1}</span>
+            <span>${moveStr}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function setHoveredPath(pathIndex) {
+      const step = steps[currentStepIndex];
+      if (pathIndex === null || !step || !step.completedPaths[pathIndex]) {
+        hoveredValidPath = null;
+      } else {
+        hoveredValidPath = step.completedPaths[pathIndex];
+      }
+      renderGrid(step);
+    }
+
+    /**
+     * Master UI update function for the current execution step.
+     */
+    function renderCurrentStep() {
+      const step = steps[currentStepIndex];
+      if (!step) return;
+
+      // Update Scrubber & Step Counter
+      stepCounter.textContent = `${currentStepIndex} / ${steps.length - 1}`;
+      stepScrubber.value = currentStepIndex;
+      stepBadge.textContent = step.badgeText;
+
+      // Style Step Badge & Narrator Indicator
+      stepBadge.className = 'px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold border ';
+      narratorDot.className = 'w-2.5 h-2.5 rounded-full shrink-0 ';
+
+      if (step.statusType === 'fail') {
+        stepBadge.classList.add('bg-rose-500/20', 'text-rose-300', 'border-rose-500/40');
+        narratorDot.classList.add('bg-rose-400');
+      } else if (step.statusType === 'success') {
+        stepBadge.classList.add('bg-emerald-500/20', 'text-emerald-300', 'border-emerald-500/40');
+        narratorDot.classList.add('bg-emerald-400');
+      } else if (step.statusType === 'return') {
+        stepBadge.classList.add('bg-amber-500/20', 'text-amber-300', 'border-amber-500/40');
+        narratorDot.classList.add('bg-amber-400');
+      } else {
+        stepBadge.classList.add('bg-indigo-500/20', 'text-indigo-300', 'border-indigo-500/40');
+        narratorDot.classList.add('bg-indigo-400');
+      }
+
+      narratorText.textContent = step.description;
+
+      // Enable/Disable Prev/Next buttons
+      btnPrev.disabled = currentStepIndex === 0;
+      btnNext.disabled = currentStepIndex >= steps.length - 1;
+
+      // Render panels
+      renderGrid(step);
+      renderCodeAndVars(step);
+      renderCallStack(step);
+      renderDiscoveredPaths(step);
+    }
+
+    /**
+     * Playback controls
+     */
+    function stepForward() {
+      if (currentStepIndex < steps.length - 1) {
+        currentStepIndex++;
+        renderCurrentStep();
+      } else {
+        stopAutoPlay();
+      }
+    }
+
+    function stepBackward() {
+      stopAutoPlay();
+      if (currentStepIndex > 0) {
+        currentStepIndex--;
+        renderCurrentStep();
+      }
+    }
+
+    function startAutoPlay() {
+      if (currentStepIndex >= steps.length - 1) {
+        currentStepIndex = 0;
+      }
+      isPlaying = true;
+      iconPlay.classList.add('hidden');
+      iconPause.classList.remove('hidden');
+      labelPlay.textContent = 'Pause';
+
+      const intervalMs = SPEED_MAP[speedSlider.value].ms;
+      playTimer = setInterval(() => {
+        if (currentStepIndex < steps.length - 1) {
+          currentStepIndex++;
+          renderCurrentStep();
+        } else {
+          stopAutoPlay();
+        }
+      }, intervalMs);
+    }
+
+    function stopAutoPlay() {
+      isPlaying = false;
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+      iconPlay.classList.remove('hidden');
+      iconPause.classList.add('hidden');
+      labelPlay.textContent = 'Auto-Play';
+    }
+
+    function toggleAutoPlay() {
+      if (isPlaying) {
+        stopAutoPlay();
+      } else {
+        startAutoPlay();
+      }
+    }
+
+    function updateSizeButtons(size) {
+      if (size === 3) {
+        btnSize3.className = 'px-2.5 py-1 rounded-md font-medium transition bg-indigo-600 text-white';
+        btnSize4.className = 'px-2.5 py-1 rounded-md font-medium transition text-slate-400 hover:text-white';
+      } else {
+        btnSize4.className = 'px-2.5 py-1 rounded-md font-medium transition bg-indigo-600 text-white';
+        btnSize3.className = 'px-2.5 py-1 rounded-md font-medium transition text-slate-400 hover:text-white';
+      }
+    }
+
+    // Event Listeners
+    btnReset.addEventListener('click', rebuildTraceAndReset);
+    btnPrev.addEventListener('click', stepBackward);
+    btnNext.addEventListener('click', () => {
+      stopAutoPlay();
+      stepForward();
+    });
+    btnPlay.addEventListener('click', toggleAutoPlay);
+
+    stepScrubber.addEventListener('input', (e) => {
+      stopAutoPlay();
+      currentStepIndex = parseInt(e.target.value, 10);
+      renderCurrentStep();
+    });
+
+    speedSlider.addEventListener('input', (e) => {
+      const val = e.target.value;
+      speedLabel.textContent = SPEED_MAP[val].label;
+      if (isPlaying) {
+        stopAutoPlay();
+        startAutoPlay();
+      }
+    });
+
+    presetSelect.addEventListener('change', (e) => {
+      const selected = e.target.value;
+      if (PRESETS[selected]) {
+        grid = PRESETS[selected].map(row => [...row]);
+        updateSizeButtons(grid.length);
+        rebuildTraceAndReset();
+      }
+    });
+
+    btnSize3.addEventListener('click', () => {
+      grid = [
+        [0, 0, 0],
+        [0, 1, 0],
+        [0, 0, 0],
+      ];
+      presetSelect.value = 'classic3x3';
+      updateSizeButtons(3);
+      rebuildTraceAndReset();
+    });
+
+    btnSize4.addEventListener('click', () => {
+      grid = [
+        [0, 0, 1, 0],
+        [0, 0, 0, 0],
+        [1, 0, 1, 0],
+        [0, 0, 0, 0],
+      ];
+      presetSelect.value = 'maze4x4';
+      updateSizeButtons(4);
+      rebuildTraceAndReset();
+    });
+
+    // Keyboard shortcuts for smooth classroom demonstrations
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleAutoPlay();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        stopAutoPlay();
+        stepForward();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        stepBackward();
+      }
+    });
+
+    // Initialize Application
+    window.onload = () => {
+      initCodeViewer();
+      rebuildTraceAndReset();
+    };
+  </script>
+</body>
+</html>
